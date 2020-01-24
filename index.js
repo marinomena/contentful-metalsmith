@@ -2,7 +2,8 @@
 
 const processor = require('./lib/processor')
 const debug = require('debug')('metalsmith-contentful-files')
-
+const CHUNKSIZE = 100
+const INTERVAL = 1500
 /**
  * Plugin function
  *
@@ -30,13 +31,34 @@ function plugin (options) {
       resolve(Object.keys(files))
     })
     .then(fileNames => {
-      return Promise.all(
-        fileNames.map(fileName => {
-          files[fileName]._fileName = fileName
 
-          return processor.processFile(files[fileName], options)
-        })
-      )
+      const processFilePromisse = item => {
+        files[item]._fileName = item
+        debug(new Date() + ' Processing: ' + item)
+        return Promise.resolve(processor.processFile(files[item], options))
+      }
+
+      const processFilesAsync = async item => {
+        return processFilePromisse(item)
+      }
+
+      const processFiles = async () => {
+        const promises = []
+
+        for(let f=0 ; f < fileNames.length ; f+=CHUNKSIZE){
+          let chunck = fileNames.slice(f, f + CHUNKSIZE)
+
+          chunck.forEach(fileName => {
+            promises.push(processFilesAsync(fileName))
+          })
+
+          //Wait because of Contentful API Rate Limmit (100 requests per second)
+          await new Promise(r => setTimeout(r, INTERVAL));
+        }
+        return Promise.all(promises)
+      }
+
+      return processFiles()
     })
     .then((fileMaps) => {
       fileMaps.forEach(map => {
